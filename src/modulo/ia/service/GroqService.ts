@@ -1,8 +1,32 @@
 import { Groq } from 'groq-sdk';
 import { supabaseServiceClient } from '@/shared/database/supabase';
 
-const groq = new Groq({
-    apiKey: process.env.GROQ_API_KEY!,
+// O client é criado sob demanda (lazy). Antes ele era instanciado no topo do
+// módulo, o que derrubava a API inteira no boot quando GROQ_API_KEY não estava
+// definida (ex.: primeiro deploy no Render). Assim, a ausência da chave afeta
+// apenas os endpoints de IA, e a mensagem de erro fica explícita.
+let groqInstance: Groq | null = null;
+
+function getGroq(): Groq {
+    if (!groqInstance) {
+        if (!process.env.GROQ_API_KEY) {
+            throw new Error(
+                'GROQ_API_KEY não configurada. Defina-a no .env (local) ou em ' +
+                'Render > Environment para habilitar os recursos de IA.'
+            );
+        }
+        groqInstance = new Groq({apiKey: process.env.GROQ_API_KEY});
+    }
+    return groqInstance;
+}
+
+// Mantém o nome `groq` nos pontos de uso, resolvendo o client somente no momento da chamada.
+const groq = new Proxy({} as Groq, {
+    get: (_target, prop) => {
+        const client = getGroq();
+        const value = Reflect.get(client, prop, client);
+        return typeof value === 'function' ? value.bind(client) : value;
+    },
 });
 
 const SYSTEM_PROMPT = `

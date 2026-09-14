@@ -86,6 +86,33 @@ Bem-vindo ao repositório do backend do **Sistema Hospitalar**, uma API RESTful 
     * Local: `http://localhost:3000`
     * Produção: `https://SUA-URL.com`
 
+## Deploy no Render
+
+O repositório inclui um [`render.yaml`](./render.yaml) (Blueprint). No Render:
+**New + > Blueprint > conectar este repositório**. O serviço é criado com:
+
+| Campo | Valor |
+| --- | --- |
+| Runtime | Node |
+| Build command | `npm ci && npm run build` |
+| Start command | `npm start` (executa `node server.js`) |
+| Health check path | `/healthz` |
+
+Detalhes importantes:
+
+* **Não existe `index.js`** — o entrypoint de produção é `server.js`, que registra
+  os aliases (`@/...`) via `tsconfig-paths` usando o `tsconfig.dist.json` e então
+  carrega o `dist/app.js` gerado pelo `tsc`.
+* **Variáveis obrigatórias** (Render > Environment): `SUPABASE_URL`,
+  `SUPABASE_KEY`, `SUPABASE_SERVICE_KEY`, `JWT_SECRET`, `ADMIN_SECRET`.
+  Sem as três primeiras a API aborta o boot com uma mensagem listando o que falta.
+  `GROQ_API_KEY` é opcional: sem ela só os endpoints `/api/ia/*` falham.
+* A porta vem do `PORT` injetado pelo Render; o servidor escuta em `0.0.0.0`.
+* `bcrypt` e `puppeteer` foram removidos das dependências (não são usados no
+  código): evitam compilação nativa e o download do Chromium no build.
+
+Passo a passo completo e solução de erros comuns: [`RENDER_DEPLOY.md`](./RENDER_DEPLOY.md).
+
 ## Documentação da API
 
 Todos os endpoints estão organizados por recurso. Base URL: `/api`

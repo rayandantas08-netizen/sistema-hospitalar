@@ -1,0 +1,10 @@
+{
+  "//": "Configuração usada APENAS em produção (node server.js). Os aliases '@/...' são escritos no código-fonte apontando para ./src, mas depois do `tsc` os arquivos ficam em ./dist. Este tsconfig remapeia o alias para ./dist, permitindo que o tsconfig-paths resolva os requires gerados. O desenvolvimento (npm run dev / jest) continua usando o tsconfig.json da raiz.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "./dist",
+    "paths": {
+      "@/*": ["*"]
+    }
+  }
+}

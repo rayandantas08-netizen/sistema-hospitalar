@@ -2,10 +2,13 @@
   "name": "sistema-hospitalar",
   "version": "0.9.9",
   "description": "Sistema Hospitalar de nível municipal baseado na arquitetura MVC (Model-View-Controller)",
-  "main": "index.js",
+  "main": "dist/app.js",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test": "jest",
-    "start": "set TS_NODE_BASEURL=./dist&& node -r tsconfig-paths/register dist/app.js",
+    "start": "node server.js",
     "build": "tsc",
     "dev": "nodemon --exec ts-node -r tsconfig-paths/register src/app.ts",
     "lint": "npx eslint . --ext .ts",
@@ -29,7 +32,6 @@
   "homepage": "https://github.com/dev-queiroz/sistema-hospitalar#readme",
   "dependencies": {
     "@supabase/supabase-js": "^2.49.4",
-    "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
     "dotenv": "^16.6.1",
@@ -39,7 +41,6 @@
     "jsonwebtoken": "^9.0.2",
     "nodemon": "^3.1.10",
     "pdfkit": "^0.17.1",
-    "puppeteer": "^24.8.0",
     "qrcode": "^1.5.4",
     "supertest": "^7.1.0",
     "tsconfig-paths": "^4.2.0",
@@ -51,7 +52,6 @@
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@jest/globals": "^29.7.0",
-    "@types/bcrypt": "^5.0.2",
     "@types/cors": "^2.8.18",
     "@types/date-fns": "^2.5.3",
     "@types/express": "^5.0.1",
@@ -59,7 +59,6 @@
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.15.17",
     "@types/pdfkit": "^0.14.0",
-    "@types/puppeteer": "^5.4.7",
     "@types/qrcode": "^1.5.5",
     "@types/supertest": "^6.0.3",
     "@types/tmp": "^0.2.6",
