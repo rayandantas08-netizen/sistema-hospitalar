@@ -1,0 +1,96 @@
+name: Deploy Fullstack (Frontend + Backend juntos) - MANUAL
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Onde fazer deploy?'
+        required: true
+        default: 'pages'
+        type: choice
+        options:
+          - pages
+          - check-only
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-fullstack
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    name: Build Fullstack
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      # Backend - instala e builda
+      - name: Instalar dependências do backend
+        run: npm ci
+
+      - name: Build backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: npm run build
+
+      # Frontend - instala e builda
+      - name: Instalar dependências do frontend
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          # Se backend e frontend no mesmo servidor, use /api
+          # Se separado, use URL do Render
+          VITE_API_URL: ${{ vars.VITE_API_URL || '/api' }}
+          VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH || '/sistema-hospitalar/' }}
+        run: npm run build
+
+      # Prepara dist unificado: backend serve frontend
+      - name: Copiar frontend para dentro do backend dist
+        run: |
+          mkdir -p dist/frontend/dist
+          cp -r frontend/dist/* dist/frontend/dist/
+          ls -la dist/frontend/dist/
+
+      - name: Configurar Pages
+        uses: actions/configure-pages@v5
+
+      - name: Preparar artefato Pages (frontend)
+        working-directory: frontend/dist
+        run: |
+          cp index.html 404.html
+          touch .nojekyll
+
+      - name: Upload artefato
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+      - name: Deploy no GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
