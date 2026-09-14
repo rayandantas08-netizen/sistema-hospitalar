@@ -46,7 +46,7 @@ Bem-vindo ao repositório do backend do **Sistema Hospitalar**, uma API RESTful 
 
    ```bash
    git clone https://github.com/seu-usuario/sistema-hospitalar.git
-   cd sistema-hospitalar/backend
+   cd sistema-hospitalar
    ```
 
 2. **Instalar dependências**:
@@ -112,6 +112,25 @@ Detalhes importantes:
   código): evitam compilação nativa e o download do Chromium no build.
 
 Passo a passo completo e solução de erros comuns: [`RENDER_DEPLOY.md`](./RENDER_DEPLOY.md).
+
+## Estrutura do repositório
+
+Este repositório é o **backend**. Todo o código do frontend (React + Vite) está
+isolado na pasta [`frontend/`](./frontend), que é um projeto 100% autocontido
+(`package.json`, lockfile, tsconfig, lint e docs próprios) — ela foi preparada
+para ser movida para um repositório independente sem nenhuma edição no backend.
+
+```
+sistema-hospitalar/          <- BACKEND (API Node.js/Express/TypeScript)
+├── src/                     <- código-fonte da API
+├── server.js                <- entrypoint de produção
+├── render.yaml              <- blueprint de deploy (Render)
+├── supabase/                <- migrations do banco
+└── frontend/                <- FRONTEND (React + Vite), pronto para separar
+```
+
+Para separar o frontend em outro repositório, veja o guia em
+[`frontend/README.md`](./frontend/README.md).
 
 ## Documentação da API
 
