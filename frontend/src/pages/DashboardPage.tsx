@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { listPacientes } from '../api/pacientes';
 import { listMedicos } from '../api/medicos';
 import { listEnfermeiros } from '../api/enfermeiros';
@@ -74,7 +75,7 @@ export default function DashboardPage() {
         </section>
       </div>
 
-      <section className="panel shortcuts-panel"><h3>⚡ Atalhos rápidos</h3><div className="shortcut-grid"><a href="/pacientes">◉<span><b>Cadastrar paciente</b><small>Novo registro</small></span></a><a href="/consultas">□<span><b>Criar consulta</b><small>Agendamento</small></span></a><a href="/triagem">♥<span><b>Iniciar triagem</b><small>Classificação</small></span></a><a href="/painel" target="_blank" rel="noreferrer">▣<span><b>Abrir painel TV</b><small>Chamadas</small></span></a></div></section>
+      <section className="panel shortcuts-panel"><h3>⚡ Atalhos rápidos</h3><div className="shortcut-grid"><Link to="/pacientes">◉<span><b>Cadastrar paciente</b><small>Novo registro</small></span></Link><Link to="/consultas">□<span><b>Criar consulta</b><small>Agendamento</small></span></Link><Link to="/triagem">♥<span><b>Iniciar triagem</b><small>Classificação</small></span></Link><Link to="/painel" target="_blank" rel="noreferrer">▣<span><b>Abrir painel TV</b><small>Chamadas</small></span></Link></div></section>
     </div>
   );
 }
