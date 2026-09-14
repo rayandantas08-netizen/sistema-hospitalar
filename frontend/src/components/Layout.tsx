@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -67,9 +67,9 @@ export function Layout() {
             <NavLink to="/configuracoes" className={location.pathname === '/configuracoes' ? 'nav-item active' : 'nav-item'}>
               <i className="nav-icon fas fa-cog" aria-hidden="true" /><span className="sidebar-text">Configurações</span>
             </NavLink>
-            <a className="nav-item" href="/painel" target="_blank" rel="noreferrer">
+            <Link className="nav-item" to="/painel" target="_blank" rel="noreferrer">
               <i className="nav-icon fas fa-tv" aria-hidden="true" /><span className="sidebar-text">Painel TV</span>
-            </a>
+            </Link>
           </nav>
         </div>
 
