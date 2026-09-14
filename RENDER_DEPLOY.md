@@ -56,6 +56,17 @@ Confira também:
 * **Health Check Path:** `/healthz`.
 * **Node version:** 22 (defina a env var `NODE_VERSION=22.22.3` se quiser fixar).
 
+> **Não use `yarn install` / `yarn start` no Render.** O gerenciador de pacotes
+> deste repositório é o **npm** (`package-lock.json` versionado e nenhum
+> `yarn.lock`). Quando o Start Command é `yarn start`, o yarn roda sem um
+> lockfile/instalação próprios e o boot falha com
+> `error Command "start" not found.` — exatamente o erro que aparece quando o
+> serviço foi criado manualmente com as configurações do template Node do Render.
+> Se você faz questão de yarn: rode `yarn install` localmente, commite o
+> `yarn.lock` gerado e use
+> `Build Command: yarn install --frozen-lockfile && yarn build` /
+> `Start Command: yarn start`. O recomendado é ficar no npm.
+
 ## 3. Variáveis de ambiente
 
 | Variável | Obrigatória | Onde obter |
@@ -89,6 +100,7 @@ Se quiser monitorar o healthcheck em vez da raiz, troque a URL para `/healthz`.
 
 | Log | Causa | Solução |
 | --- | --- | --- |
+| `error Command "start" not found.` | Start Command usa **yarn**, mas o projeto é **npm** (só existe `package-lock.json`; não há `yarn.lock`) | `Start Command: npm start` (ou `node server.js`) |
 | `Cannot find module '/opt/render/project/src/index.js'` | start command errado / `main` apontando para arquivo inexistente | `Start Command: npm start` (que roda `node server.js`) |
 | `Cannot find module '@/shared/database/supabase'` | aliases não registrados antes de carregar o `dist` | use `node server.js` (ele carrega `tsconfig.dist.json`) |
 | `Cannot find module './dist/app.js'` | build não rodou | `Build Command: npm ci && npm run build` |
