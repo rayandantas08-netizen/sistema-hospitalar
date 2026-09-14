@@ -1,0 +1,40 @@
+# Blueprint do Render.
+# Com este arquivo na raiz, o Render cria/atualiza o serviço com os comandos
+# corretos (build: npm ci + tsc | start: node server.js) sem depender do
+# "main" do package.json — que era o que causava o erro
+# "Cannot find module '/opt/render/project/src/index.js'".
+#
+# Como usar: Render > New + > Blueprint > conectar este repositório.
+# Se o serviço já foi criado manualmente, basta conferir se Build command e
+# Start command batem com os valores abaixo.
+services:
+  - type: web
+    name: sistema-hospitalar
+    runtime: node
+    plan: free
+    region: ohio # troque se preferir oregon/oregon-2 ou frankfurt
+    branch: main
+    rootDir: .
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.3
+      - key: NODE_ENV
+        value: production
+      # Segredos: defina os valores em Render > Environment (generateValue: true
+      # cria um valor aleatório, útil para JWT_SECRET/ADMIN_SECRET).
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_SECRET
+        generateValue: true
