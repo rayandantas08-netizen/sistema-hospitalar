@@ -69,7 +69,7 @@ export class AuthService {
         }
 
         // 3. Verifica duplicatas (email, CPF, CNS)
-        const { data: existingUser } = await supabaseClient
+        const { data: existingUser } = await supabaseServiceClient
             .from('funcionario')
             .select('id')
             .or(`email.eq.${email},cpf.eq.${cpf},cns.eq.${cns}`)
@@ -80,12 +80,11 @@ export class AuthService {
         }
 
         // 4. Cria usuário no Supabase Auth
-        const { data: authUser, error: authError } = await supabaseClient.auth.signUp({
+        const { data: authUser, error: authError } = await supabaseServiceClient.auth.admin.createUser({
             email,
             password,
-            options: {
-                data: { nome, papel: Papeis.ADMINISTRADOR_PRINCIPAL },
-            },
+            email_confirm: true,
+            user_metadata: { nome, papel: Papeis.ADMINISTRADOR_PRINCIPAL },
         });
 
         if (authError || !authUser.user) {
@@ -93,7 +92,7 @@ export class AuthService {
         }
 
         // 5. Cria perfil do administrador
-        const { data: funcionario, error: insertError } = await supabaseClient
+        const { data: funcionario, error: insertError } = await supabaseServiceClient
             .from('funcionario')
             .insert({
                 id: authUser.user.id,

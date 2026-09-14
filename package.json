@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "jest",
-    "start": "node dist/app.js",
+    "start": "set TS_NODE_BASEURL=./dist&& node -r tsconfig-paths/register dist/app.js",
     "build": "tsc",
     "dev": "nodemon --exec ts-node -r tsconfig-paths/register src/app.ts",
     "lint": "npx eslint . --ext .ts",

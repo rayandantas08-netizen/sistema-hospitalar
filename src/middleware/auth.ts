@@ -1,11 +1,6 @@
 import {NextFunction, Request, Response} from 'express';
-import jwt from 'jsonwebtoken';
-import {supabaseClient} from '@/shared/database/supabase';
+import {supabaseClient, supabaseServiceClient} from '@/shared/database/supabase';
 import {Papeis} from '@/modulo/core/model/Enums';
-import dotenv from 'dotenv';
-
-dotenv.config();
-const supabase = supabaseClient;
 
 interface AuthenticatedRequest extends Request {
     user?: { id: string; papel: Papeis };
@@ -24,12 +19,18 @@ export const requireAuth = async (
 
     const token = authHeader.split(' ')[1];
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { sub: string };
+        const {data: authData, error: authError} = await supabaseClient.auth.getUser(token);
+        const userId = authData.user?.id;
+        if (authError || !userId) {
+            res.status(401).json({error: 'Token inválido'});
+            return;
+        }
 
-        const {data: usuario, error} = await supabase
+        const {data: usuario, error} = await supabaseServiceClient
             .from('funcionario')
             .select('papel')
-            .eq('id', decoded.sub)
+            .eq('id', userId)
+            .eq('ativo', true)
             .single();
 
         if (error || !usuario) {
@@ -37,7 +38,7 @@ export const requireAuth = async (
             return;
         }
 
-        req.user = {id: decoded.sub, papel: usuario.papel as Papeis};
+        req.user = {id: userId, papel: usuario.papel as Papeis};
         next();
     } catch (err) {
         res.status(401).json({error: 'Token inválido'});
