@@ -1,15 +1,19 @@
-import { apiFetch } from './client';
+import { apiFetch, isDirectMode } from './client';
 import type { PatientRecord } from '../types/auth';
+import { listPacientesDirect, getPacienteDirect, createPacienteDirect, updatePacienteDirect, deletePacienteDirect } from './supabase-direct';
 
 export async function listPacientes(token: string): Promise<PatientRecord[]> {
+  if (isDirectMode()) return listPacientesDirect() as Promise<PatientRecord[]>;
   return apiFetch<PatientRecord[]>('/pacientes', { method: 'GET' }, token);
 }
 
 export async function getPaciente(id: string, token: string): Promise<PatientRecord> {
+  if (isDirectMode()) return getPacienteDirect(id) as Promise<PatientRecord>;
   return apiFetch<PatientRecord>(`/pacientes/${id}`, { method: 'GET' }, token);
 }
 
 export async function createPaciente(payload: Record<string, unknown>, token: string): Promise<PatientRecord> {
+  if (isDirectMode()) return createPacienteDirect(payload) as Promise<PatientRecord>;
   return apiFetch<PatientRecord>('/pacientes', {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -17,6 +21,7 @@ export async function createPaciente(payload: Record<string, unknown>, token: st
 }
 
 export async function updatePaciente(id: string, payload: Record<string, unknown>, token: string): Promise<PatientRecord> {
+  if (isDirectMode()) return updatePacienteDirect(id, payload) as Promise<PatientRecord>;
   return apiFetch<PatientRecord>(`/pacientes/${id}`, {
     method: 'PUT',
     body: JSON.stringify(payload),
@@ -24,9 +29,16 @@ export async function updatePaciente(id: string, payload: Record<string, unknown
 }
 
 export async function deletePaciente(id: string, token: string): Promise<void> {
+  if (isDirectMode()) return deletePacienteDirect(id);
   return apiFetch<void>(`/pacientes/${id}`, { method: 'DELETE' }, token);
 }
 
 export async function getPacienteHistorico(id: string, token: string): Promise<Record<string, unknown>> {
+  // Histórico ainda precisa do backend por enquanto (agregação complexa)
+  if (isDirectMode()) {
+    // fallback simples: retorna paciente + consultas
+    const paciente = await getPacienteDirect(id);
+    return { paciente, aviso: 'Histórico completo precisa do backend. No modo GitHub Pages, mostrando dados básicos.' } as any;
+  }
   return apiFetch<Record<string, unknown>>(`/pacientes/${id}/historico`, { method: 'GET' }, token);
 }

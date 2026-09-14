@@ -38,14 +38,14 @@ jobs:
       - name: Build (Vite)
         working-directory: frontend
         env:
-          # URL pública da API. Configure em GitHub > Settings > Secrets and variables > Actions > Variables
-          # Se backend e frontend estão no mesmo domínio, use /api
-          # Se backend está separado (Render, etc), use a URL completa
-          VITE_API_URL: ${{ vars.VITE_API_URL || secrets.VITE_API_URL || 'https://sistema-hospitalar.onrender.com/api' }}
+          # MODO 1: Com backend (Render, Vercel) - URL da API
+          # MODO 2: GitHub Pages only - deixe VITE_API_URL vazio e configure Supabase direto
+          VITE_API_URL: ${{ vars.VITE_API_URL || secrets.VITE_API_URL }}
           VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH || '/sistema-hospitalar/' }}
-          # Supabase pode ser usado direto no frontend se necessário (opcional)
-          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL || vars.SUPABASE_URL }}
-          VITE_SUPABASE_KEY: ${{ secrets.SUPABASE_KEY || vars.SUPABASE_KEY }}
+          # Para modo GitHub Pages only (sem backend): frontend fala direto com Supabase
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || secrets.SUPABASE_URL || vars.VITE_SUPABASE_URL || vars.SUPABASE_URL }}
+          VITE_SUPABASE_KEY: ${{ secrets.VITE_SUPABASE_KEY || secrets.SUPABASE_KEY || vars.VITE_SUPABASE_KEY || vars.SUPABASE_KEY }}
+          VITE_USE_SUPABASE_DIRECT: ${{ vars.VITE_USE_SUPABASE_DIRECT || 'false' }}
         run: npm run build
 
       - name: Preparar artefato para o Pages
