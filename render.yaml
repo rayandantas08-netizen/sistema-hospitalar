@@ -15,7 +15,10 @@ services:
     region: ohio # troque se preferir oregon/oregon-2 ou frankfurt
     branch: main
     rootDir: .
-    buildCommand: npm ci && npm run build
+    # --include=dev é obrigatório aqui: este blueprint define NODE_ENV=production,
+    # e o npm trata NODE_ENV=production como `--omit=dev`. Sem a flag, o typescript
+    # não é instalado e o build morre em "sh: 1: tsc: not found".
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /healthz
     autoDeploy: true

@@ -43,9 +43,23 @@ start utilizável, então caiu no padrão `node index.js` (ou usou o campo `main
 Em **Settings** do serviço:
 
 ```
-Build Command:   npm ci && npm run build
+Build Command:   npm ci --include=dev && npm run build
 Start Command:   npm start
 ```
+
+Os dois campos têm que estar corretos **ao mesmo tempo**. Cada combinação errada
+produz um erro diferente no log:
+
+| Build Command | Start Command | Resultado no log |
+| --- | --- | --- |
+| `npm install` (sem `run build`) | `node dist/app.js` | `Cannot find module '/opt/render/project/src/dist/app.js'` — `dist/` não existe no git, ele só nasce do `tsc` |
+| qualquer | `node dist/app.js` | `Cannot find module '@/shared/database/supabase'` — o `tsc` não reescreve os aliases; só o `server.js` registra o `tsconfig-paths` |
+| `npm ci` + `NODE_ENV=production` | `npm start` | `sh: 1: tsc: not found` — o npm trata `NODE_ENV=production` como `--omit=dev`, então o typescript nem é instalado |
+| `npm ci && npm run build` | `npm start` | `Servidor rodando em 0.0.0.0:<PORT>` ✅ |
+
+> **Nunca use `node dist/app.js` como Start Command neste projeto.** O entrypoint
+> de produção é o `server.js` (via `npm start`), que carrega `tsconfig.dist.json`
+> antes do `dist/app.js`.
 
 Confira também:
 
@@ -103,7 +117,9 @@ Se quiser monitorar o healthcheck em vez da raiz, troque a URL para `/healthz`.
 | `error Command "start" not found.` | Start Command usa **yarn**, mas o projeto é **npm** (só existe `package-lock.json`; não há `yarn.lock`) | `Start Command: npm start` (ou `node server.js`) |
 | `Cannot find module '/opt/render/project/src/index.js'` | start command errado / `main` apontando para arquivo inexistente | `Start Command: npm start` (que roda `node server.js`) |
 | `Cannot find module '@/shared/database/supabase'` | aliases não registrados antes de carregar o `dist` | use `node server.js` (ele carrega `tsconfig.dist.json`) |
-| `Cannot find module './dist/app.js'` | build não rodou | `Build Command: npm ci && npm run build` |
+| `Cannot find module './dist/app.js'` | build não rodou | `Build Command: npm ci --include=dev && npm run build` |
+| `Cannot find module 'date-fns'` no boot | `date-fns` estava em `devDependencies` mas é importado por `src/modulo/triagem/service/PrioridadeService.ts` | movido para `dependencies` (instalação `--omit=dev` agora funciona) |
+| `sh: 1: tsc: not found` no build | `NODE_ENV=production` faz o npm pular os `devDependencies` | adicione `--include=dev` ao `npm ci` |
 | `Variáveis de ambiente obrigatórias não definidas: ...` | env vars faltando | Render > Environment |
 | `GroqError: The GROQ_API_KEY environment variable is missing` | só se algo chamar `/api/ia/*` | defina `GROQ_API_KEY` |
 | `Application failed to respond` / healthcheck falha | serviço não escutou em `PORT` | o `app.ts` já usa `process.env.PORT`; não fixe porta |
