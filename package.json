@@ -5,9 +5,13 @@
   "main": "index.js",
   "scripts": {
     "test": "jest",
-    "start": "set TS_NODE_BASEURL=./dist&& node -r tsconfig-paths/register dist/app.js",
+    "start": "node -r tsconfig-paths/register dist/app.js",
+    "start:prod": "NODE_ENV=production node -r tsconfig-paths/register dist/app.js",
     "build": "tsc",
+    "build:full": "npm run build && cd frontend && npm install && npm run build",
     "dev": "nodemon --exec ts-node -r tsconfig-paths/register src/app.ts",
+    "dev:full": "concurrently \"npm run dev\" \"cd frontend && npm run dev\"",
+    "check:env": "node scripts/check-supabase.js",
     "lint": "npx eslint . --ext .ts",
     "lint:fix": "npx eslint . --ext .ts --fix"
   },

@@ -1,4 +1,12 @@
+// Em produção fullstack (backend servindo frontend), VITE_API_URL = /api
+// Em produção separada (Pages + Render), VITE_API_URL = https://seu-backend.onrender.com/api
+// Local: http://localhost:3000/api
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+
+// Log apenas em dev para debug
+if (import.meta.env.DEV) {
+  console.log('🔌 API_BASE_URL:', API_BASE_URL);
+}
 
 export async function apiFetch<T>(
   endpoint: string,
