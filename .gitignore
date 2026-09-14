@@ -1,13 +1,18 @@
+# =========================
+# Backend (raiz do repo)
+# =========================
 /.env
-/frontend/.env
 node_modules/
-/backend/node_modules
-/frontend/node_modules
-/backend/dist
+dist
+
+# Arquivos que não devem ser versionados
 prontuario.controller.spec.ts
 jest.config.js
-.idea
+reqs
+
+# Logs
 combined.log
 error.log
-dist
-reqs
+
+# IDE
+.idea

@@ -50,8 +50,8 @@ Start Command:   npm start
 Confira também:
 
 * **Runtime:** Node (não "Static Site" — este diretório é a API).
-* **Root Directory:** deixe em branco / `.` (o backend está na raiz; o
-  `frontend/` é publicado no GitHub Pages por outro workflow).
+* **Root Directory:** deixe em branco / `.` (o backend está na raiz; a pasta
+  `frontend/` é um projeto separado que será movido para outro repositório).
 * **Branch:** `main`.
 * **Health Check Path:** `/healthz`.
 * **Node version:** 22 (defina a env var `NODE_VERSION=22.22.3` se quiser fixar).

@@ -52,6 +52,9 @@ module.exports = [
     },
 
     {
-        ignores: ['dist/**', 'node_modules/**']
+        // "frontend/" é um projeto independente (React + Vite) com lint próprio
+        // (oxlint). Este repositório é o backend, então o ESLint da raiz não
+        // deve analisar os arquivos de lá.
+        ignores: ['dist/**', 'node_modules/**', 'frontend/**']
     }
 ]
