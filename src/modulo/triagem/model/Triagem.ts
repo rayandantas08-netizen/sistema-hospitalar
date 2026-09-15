@@ -10,6 +10,8 @@ export class Triagem extends BaseEntity {
     sinaisVitais: SinaisVitais;
     data: Date;
     queixaPrincipal: string;
+    /** Escore MEWS (0-14) calculado pelo MewsService no momento da triagem. */
+    mewsScore: number | null;
 
     constructor(
         id: string,
@@ -18,7 +20,8 @@ export class Triagem extends BaseEntity {
         unidadeSaudeId: string,
         nivelGravidade: NivelGravidade,
         sinaisVitais: SinaisVitais,
-        queixaPrincipal: string
+        queixaPrincipal: string,
+        mewsScore: number | null = null
     ) {
         super(id);
         this.pacienteId = pacienteId;
@@ -28,5 +31,11 @@ export class Triagem extends BaseEntity {
         this.sinaisVitais = sinaisVitais;
         this.data = new Date();
         this.queixaPrincipal = queixaPrincipal;
+        this.mewsScore = mewsScore;
+    }
+
+    /** Alias de `nivelGravidade` na grafia usada pelo Protocolo de Manchester. */
+    get classificacaoRisco(): NivelGravidade {
+        return this.nivelGravidade;
     }
 }

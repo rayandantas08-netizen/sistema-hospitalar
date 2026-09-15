@@ -1,8 +1,10 @@
 import {Request, Response} from 'express';
 import {TriagemService} from '../service/TriagemService';
-import {CreateTriagemDTO, UpdateTriagemDTO} from '../../core/dtos';
+import {CreateTriagemDTO, ListTriagensQueryDTO, UpdateTriagemDTO} from '../../core/dtos';
 import {z} from 'zod';
 import {NivelGravidade, Papeis} from '../../core/model/Enums';
+import {resolverPaginacao} from '../../core/utils/paginacao';
+import {responderErro} from '../../core/utils/respostaHttp';
 
 interface AuthenticatedRequest extends Request {
     user?: { id: string; papel: Papeis };
@@ -43,19 +45,82 @@ export class TriagemController {
         }
     }
 
+    /**
+     * GET /api/triagens
+     * Filtros: unidadeSaudeId, classificacaoRisco, pacienteId, mewsMinimo.
+     *
+     * Compatibilidade: sem parâmetros de paginação devolve um ARRAY (contrato
+     * antigo); com `pagina`/`limite` (ou `page`/`limit`) devolve o envelope
+     * `{data, paginacao}` pedido pelo novo frontend.
+     */
     async list(req: AuthenticatedRequest, res: Response): Promise<void> {
         try {
+            const query = ListTriagensQueryDTO.parse(req.query);
             const usuarioId = req.user?.id;
             if (!usuarioId) throw new Error('ID do usuário não encontrado');
 
-            const {data, error} = await this.triagemService.getAllTriagens(usuarioId);
+            const temPaginacao = [query.pagina, query.page, query.limite, query.limit].some(
+                (valor) => valor !== undefined
+            );
+
+            const {data, error} = await this.triagemService.listTriagensPaginadas(
+                {
+                    unidadeSaudeId: query.unidadeSaudeId,
+                    classificacaoRisco: query.classificacaoRisco,
+                    pacienteId: query.pacienteId,
+                    mewsMinimo: query.mewsMinimo,
+                },
+                resolverPaginacao(query)
+            );
+
             if (error || !data) {
-                res.status(404).json({error: error?.message || 'Nenhuma triagem encontrada'});
+                res.status(400).json({error: error?.message || 'Nenhuma triagem encontrada'});
                 return;
             }
+
+            res.json(temPaginacao ? data : data.data);
+        } catch (error: any) {
+            responderErro(res, error);
+        }
+    }
+
+    /** GET /api/sala-vermelha/fila — triagens VERMELHO aguardando atendimento. */
+    async listFilaSalaVermelha(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            const query = ListTriagensQueryDTO.parse(req.query);
+            const temPaginacao = [query.pagina, query.page, query.limite, query.limit].some(
+                (valor) => valor !== undefined
+            );
+
+            const {data, error} = await this.triagemService.getFilaSalaVermelha(
+                {unidadeSaudeId: query.unidadeSaudeId},
+                temPaginacao ? resolverPaginacao(query) : undefined
+            );
+
+            if (error || !data) {
+                res.status(400).json({error: error?.message || 'Nenhuma triagem de risco na fila'});
+                return;
+            }
+
             res.json(data);
         } catch (error: any) {
-            res.status(400).json({error: error.message});
+            responderErro(res, error);
+        }
+    }
+
+    /** GET /api/triagens/:id/mews — escore MEWS da triagem. */
+    async getMews(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            const {data, error} = await this.triagemService.getMewsDaTriagem(req.params.id);
+
+            if (error || !data) {
+                res.status(404).json({error: error?.message || 'Triagem não encontrada'});
+                return;
+            }
+
+            res.json(data);
+        } catch (error: any) {
+            responderErro(res, error);
         }
     }
 

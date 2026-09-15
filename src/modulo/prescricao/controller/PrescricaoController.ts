@@ -1,9 +1,11 @@
 import {Request, Response} from 'express';
 import {PrescricaoService} from '../service/PrescricaoService';
-import {CreatePrescricaoDTO, UpdatePrescricaoDTO} from '../../core/dtos';
+import {CreatePrescricaoDTO, ListPrescricoesQueryDTO, UpdatePrescricaoDTO} from '../../core/dtos';
 import {z} from 'zod';
 import {Papeis} from '../../core/model/Enums';
 import {supabaseClient} from '../../../shared/database/supabase';
+import {resolverPaginacao} from '../../core/utils/paginacao';
+import {statusDoErro} from '../../core/utils/respostaHttp';
 
 interface AuthenticatedRequest extends Request {
     user?: { id: string; papel: Papeis };
@@ -22,16 +24,13 @@ export class PrescricaoController {
             const usuarioId = req.user?.id;
             if (!usuarioId) throw new Error('ID do usuário não encontrado');
 
-            const {data, error} = await this.prescricaoService.createPrescricao(
-                validated.pacienteId,
-                usuarioId,
-                validated.unidadeSaudeId,
-                validated.detalhesPrescricao,
-                validated.cid10
-            );
+            const {data, error} = await this.prescricaoService.criarPrescricao({
+                ...validated,
+                profissionalId: usuarioId,
+            });
 
             if (error || !data) {
-                res.status(400).json({error: error?.message || 'Erro ao criar prescrição'});
+                res.status(statusDoErro(error, 400)).json({error: error?.message || 'Erro ao criar prescrição'});
                 return;
             }
             res.status(201).json(data);
@@ -49,12 +48,36 @@ export class PrescricaoController {
             const usuarioId = req.user?.id;
             if (!usuarioId) throw new Error('ID do usuário não encontrado');
 
-            const {data, error} = await this.prescricaoService.getAllPrescricoes(usuarioId);
-            if (error) {
-                res.status(400).json({error: error.message});
+            const query = ListPrescricoesQueryDTO.parse(req.query);
+            const temPaginacao = [query.pagina, query.page, query.limite, query.limit].some(
+                (valor) => valor !== undefined
+            );
+
+            if (!temPaginacao && !query.pacienteId && !query.unidadeSaudeId && !query.profissionalId && !query.status) {
+                // Contrato antigo: array simples com as últimas 100 prescrições.
+                const {data, error} = await this.prescricaoService.getAllPrescricoes(usuarioId);
+                if (error) {
+                    res.status(400).json({error: error.message});
+                    return;
+                }
+                res.json(data);
                 return;
             }
-            res.json(data);
+
+            const {data, error} = await this.prescricaoService.listPrescricoesPaginadas(
+                {
+                    pacienteId: query.pacienteId,
+                    unidadeSaudeId: query.unidadeSaudeId,
+                    profissionalId: query.profissionalId,
+                    status: query.status,
+                },
+                resolverPaginacao(query)
+            );
+            if (error || !data) {
+                res.status(400).json({error: error?.message || 'Erro ao listar prescrições'});
+                return;
+            }
+            res.json(temPaginacao ? data : data.data);
         } catch (error: any) {
             res.status(400).json({error: error.message});
         }
@@ -105,9 +128,21 @@ export class PrescricaoController {
             const {
                 data,
                 error
-            } = await this.prescricaoService.updatePrescricao(id, validated.detalhesPrescricao, validated.cid10, usuarioId);
+            } = await this.prescricaoService.updatePrescricao(
+                id,
+                validated.detalhesPrescricao,
+                validated.cid10,
+                usuarioId,
+                {
+                    medicamento: validated.medicamento,
+                    via: validated.via,
+                    posologia: validated.posologia,
+                    duracao: validated.duracao,
+                    status: validated.status,
+                }
+            );
             if (error || !data) {
-                res.status(404).json({error: error?.message || 'Prescrição não encontrada'});
+                res.status(statusDoErro(error, 404)).json({error: error?.message || 'Prescrição não encontrada'});
                 return;
             }
             res.json(data);

@@ -8,7 +8,10 @@ Bem-vindo ao repositório do backend do **Sistema Hospitalar**, uma API RESTful 
 * **Gestão de Pacientes**: Cadastro, atualização, exclusão lógica (soft delete), histórico clínico e consentimento LGPD explícito.
 * **Consultas Médicas**: Criação, edição, listagem por paciente, médico ou unidade, com suporte a CID-10.
 * **Prescrições e Prontuários**: Registro, edição, geração de PDFs e anonimização automática de dados sensíveis.
-* **Triagens**: Avaliação inicial por enfermeiros com sinais vitais, classificação de gravidade e priorização.
+* **Triagens**: Avaliação inicial por enfermeiros com sinais vitais, classificação de gravidade (Protocolo de Manchester) e priorização, com **escore MEWS** (0–14) calculado e gravado junto da triagem.
+* **Salas por Unidade**: Consultórios, emergência, farmácia, triagem e exames, com responsável (médico/enfermeiro) e status operacional (`LIVRE`, `EM_ATENDIMENTO`, `MONITORADA`, `INATIVA`).
+* **Chamadas de Pacientes**: Registro da chamada com senha (`A014`, `V001`), prioridade por cor, fila de triados e **painel de TV em tempo real** (SSE + WebSocket, sem dependências novas).
+* **Leitos e Internação**: Sala Vermelha, UTI geral, enfermaria e isolamento, com status do leito (livre, ocupado, higienização, manutenção), ventilador mecânico, monitor cardíaco e diagnóstico.
 * **Unidades de Saúde**: Cadastro e gerenciamento de hospitais/UPAs com CNES, serviços essenciais e ampliados.
 * **Inteligência Artificial** (novo em 3.2.0):
 
@@ -108,10 +111,42 @@ Detalhes importantes:
   Sem as três primeiras a API aborta o boot com uma mensagem listando o que falta.
   `GROQ_API_KEY` é opcional: sem ela só os endpoints `/api/ia/*` falham.
 * A porta vem do `PORT` injetado pelo Render; o servidor escuta em `0.0.0.0`.
+* **Painel de TV (opcional)**: define `PAINEL_TV_TOKEN` para liberar a leitura do
+  painel sem login (`GET /api/chamadas/ultimas`, `/eventos`, `/realtime`, e o
+  WebSocket `/api/chamadas/ws`). O token vai no header `x-painel-token` ou em
+  `?token=` (necessário para o `EventSource`). Sem a variável, o painel exige JWT.
 * `bcrypt` e `puppeteer` foram removidos das dependências (não são usados no
   código): evitam compilação nativa e o download do Chromium no build.
 
 Passo a passo completo e solução de erros comuns: [`RENDER_DEPLOY.md`](./RENDER_DEPLOY.md).
+
+## Banco de dados e seed inicial
+
+As tabelas são criadas pelas migrations em `supabase/migrations/` (aplicadas com
+`supabase db push` ou colando o SQL no SQL Editor do Supabase). A migration
+`20260915_salas_chamadas_leitos_mews_soap.sql` cria salas, leitos e chamadas, e
+adiciona o MEWS à triagem e o PEP SOAP ao prontuário.
+
+A migration `20260915000200_seed_infraestrutura_inicial.sql` popula a
+infraestrutura **somente se o banco estiver vazio**:
+
+* 1 unidade: **Hospital Central de Clínicas** (CNES `1234567`)
+* 4 salas: Consultório 01 (Clínica Geral), Consultório 03 (Clínica Médica), Consultório 05 (Pediatria) e Sala Vermelha (Emergência)
+* 6 leitos da Sala Vermelha (Leito 01 a Leito 06; 01 e 02 com ventilador mecânico)
+
+O usuário administrador não pode ser criado por SQL (a senha precisa ser
+encriptada em bcrypt pelo GoTrue do Supabase Auth), então ele é criado pelo
+script TypeScript:
+
+```bash
+npm run seed        # desenvolvimento (ts-node)
+npm run seed:prod   # produção (usa dist/, depois de npm run build)
+```
+
+Variáveis do seed: `SEED_ADMIN_EMAIL` e `SEED_ADMIN_PASSWORD` (mínimo 8
+caracteres) são obrigatórias para criar o admin; `SEED_ADMIN_NOME`,
+`SEED_ADMIN_CPF`, `SEED_ADMIN_CNS` e `SEED_ADMIN_TELEFONE` são opcionais. O seed
+é idempotente: rodar duas vezes não duplica unidade, salas nem leitos.
 
 ## Estrutura do repositório
 
@@ -173,6 +208,30 @@ Todos os endpoints estão organizados por recurso. Base URL: `/api`
 
 * `POST`, `GET`, `PUT`, `DELETE`
 * `GET /prontuarios/:id/pdf`
+* `POST /prontuarios/:id/assinar` – Assinatura com selo de integridade SHA-256 (`certificadoHash`)
+* Campos do PEP estruturado (SOAP): `subjetivo`, `objetivo`, `avaliacao`, `plano`, `cid10`, `cid10Secundarios`
+
+### Salas (`/salas`)
+
+* `GET /salas` – Lista com join de responsável e unidade (paginado)
+* `POST /salas`, `PUT /salas/:id`, `DELETE /salas/:id`
+* `GET /unidades/:unidadeSaudeId/salas` – Salas de uma unidade
+
+### Chamadas de Pacientes (`/chamadas`)
+
+* `POST /chamadas/chamar` – Registra a chamada e publica no painel em tempo real
+* `GET /chamadas/ultimas` – Últimas 10 chamadas (painel de TV; aceita `PAINEL_TV_TOKEN`)
+* `GET /chamadas/fila` – Fila de pacientes triados aguardando chamada
+* `PATCH /chamadas/:id/finalizar` e `PATCH /chamadas/:id/iniciar`
+* `GET /chamadas/eventos` – Stream SSE do painel (EventSource)
+* `WS /chamadas/ws` – WebSocket do painel (`new WebSocket('ws://<host>/api/chamadas/ws?token=...')`)
+
+### Leitos (`/leitos`)
+
+* `GET /leitos?setor=SALA_VERMELHA`, `POST /leitos`, `PUT /leitos/:id`
+* `PATCH /leitos/:id/status` – Livre/ocupado/higienização/manutenção
+* `GET /leitos/resumo` – Ocupação e ventiladores disponíveis
+* `GET /sala-vermelha/fila` – Triagens VERMELHO aguardando atendimento
 
 ### Triagens (`/triagens`)
 

@@ -12,7 +12,9 @@
     "build": "tsc",
     "dev": "nodemon --exec ts-node -r tsconfig-paths/register src/app.ts",
     "lint": "npx eslint . --ext .ts",
-    "lint:fix": "npx eslint . --ext .ts --fix"
+    "lint:fix": "npx eslint . --ext .ts --fix",
+    "seed": "ts-node -r tsconfig-paths/register src/scripts/seed.ts",
+    "seed:prod": "node -r tsconfig-paths/register dist/scripts/seed.js"
   },
   "repository": {
     "type": "git",

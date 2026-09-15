@@ -1,6 +1,7 @@
 import express, {Request, Response} from 'express';
 import cors from 'cors';
 import {router} from './modulo';
+import {anexarWebSocketPainel} from './modulo/chamada/service/PainelRealtime';
 
 const app = express();
 
@@ -30,9 +31,17 @@ const PORT = Number(process.env.PORT) || 3000;
 // (Render, Docker etc.), e não apenas em localhost.
 const HOST = process.env.HOST || '0.0.0.0';
 
-const server = app.listen(PORT, HOST, () => {
+// Exportado também para os testes conseguirem encerrar o listener
+// (`server.close()`), evitando que o Jest fique pendurado no final da suíte.
+export const server = app.listen(PORT, HOST, () => {
     console.log(`Servidor rodando em ${HOST}:${PORT}`);
 });
+
+// Canal WebSocket do painel de TV (ws://<host>/api/chamadas/ws).
+// O SSE (/api/chamadas/eventos) é servido por uma rota normal do Express; o
+// WebSocket precisa ser anexado ao servidor HTTP, pois começa com um pedido
+// de "upgrade" que não passa pelo roteador do Express.
+anexarWebSocketPainel(server);
 
 // Encerramento gracioso: o Render envia SIGTERM antes de derrubar o instance.
 const shutdown = (signal: string) => {

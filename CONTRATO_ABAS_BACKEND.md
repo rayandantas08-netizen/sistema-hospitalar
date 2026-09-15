@@ -4,6 +4,58 @@
 
 As abas de pacientes, médicos e enfermeiros possuem endpoints e DTOs no backend. As abas de unidades, consultas, triagem, prontuários e prescrições também possuem endpoints. Farmácia, estoque, movimentações, dispensação, compras, notas fiscais e fornecedores possuem tabelas no Supabase, mas ainda não possuem rotas/controllers/services no backend.
 
+Implementado nesta rodada (chamadas de pacientes, salas e leitos):
+
+- **Salas**: `GET/POST /api/salas`, `GET/PUT/DELETE /api/salas/:id`, `GET /api/unidades/:unidadeSaudeId/salas` (alias `/api/unidades-saude/:unidadeSaudeId/salas`)
+- **Chamadas / Painel de TV**: `POST /api/chamadas/chamar`, `GET /api/chamadas/ultimas`, `GET /api/chamadas/fila`, `PATCH /api/chamadas/:id/finalizar`, `PATCH /api/chamadas/:id/iniciar`, `GET /api/chamadas/eventos` (SSE), `ws://<host>/api/chamadas/ws`
+- **Leitos**: `GET/POST /api/leitos`, `PATCH /api/leitos/:id/status`, `PUT /api/leitos/:id`, `GET /api/leitos/resumo`, `GET /api/sala-vermelha/leitos`
+- **Sala Vermelha**: `GET /api/sala-vermelha/fila`
+- **Triagem**: `GET /api/triagens` com paginação/filtros e `GET /api/triagens/:id/mews`
+- **PEP SOAP**: `POST /api/prontuarios/:id/assinar` e campos SOAP no `POST /api/prontuarios`
+
+### Paginação e filtros (padrão novo)
+
+Endpoints de listagem aceitam `?pagina=1&limite=20` (ou `page`/`limit`) e devolvem:
+
+```json
+{
+  "data": [ ... ],
+  "paginacao": { "pagina": 1, "limite": 20, "total": 42, "totalPaginas": 3 }
+}
+```
+
+`GET /api/triagens`, `GET /api/prontuarios` e `GET /api/prescricoes` mantêm o **array simples** quando nenhum parâmetro de paginação/filtro é enviado (compatibilidade com o contrato antigo) e passam a devolver o envelope acima quando há paginação.
+
+### Salas — campos
+
+`POST /api/salas` obrigatórios: `unidadeSaudeId`, `nome`, `tipo`. Opcionais: `responsavelId` (médico ou enfermeiro ativo; `null` limpa), `status` (`LIVRE` padrão, `EM_ATENDIMENTO`, `MONITORADA`, `INATIVA`).
+
+Resposta de cada sala: `id`, `unidadeSaudeId`, `unidadeNome`, `nome`, `tipo`, `responsavelId`, `responsavelNome`, `responsavelPapel`, `status`, `ativo`.
+
+### Chamadas — campos
+
+`POST /api/chamadas/chamar` — informe `pacienteId` **ou** `triagemId`; e `salaId` **ou** `sala` (nome). Opcionais: `senha` (gerada automaticamente se ausente), `prioridade` (aceita `Vermelho` ou `VERMELHO`; obrigatória quando não há `triagemId`), `profissionalId` (padrão: usuário autenticado).
+
+A resposta (e o evento do painel) traz: `id`, `pacienteId`, `pacienteNome`, `senha`, `prioridade`, `status`, `salaId`, `sala`, `unidadeSaudeId`, `chamadoEm`, `atendidoEm`, `finalizadoEm`, `profissionalId`, `profissionalNome`.
+
+### Leitos — campos
+
+`POST /api/leitos` obrigatórios: `unidadeSaudeId`, `nomeOuNumero`. Opcionais: `setor` (padrão `SALA_VERMELHA`), `status` (padrão `LIVRE`), `pacienteId`, `ventiladorMecanico` (padrão `false`), `monitorCardiaco` (padrão `true`), `diagnostico`.
+
+`PATCH /api/leitos/:id/status` aceita `{ "status": "OCUPADO", "pacienteId": "<uuid>", "diagnostico": "..." }`. Para `LIVRE`/`HIGIENIZACAO` não envie paciente: o backend limpa os vínculos.
+
+### Triagem — escore MEWS
+
+`POST /api/triagens` continua igual (o `enfermeiroId` vem do token e a classificação é calculada pelo backend), com um campo novo opcional dentro de `sinaisVitais`: `escalaAvpu` (`ALERTA`, `VOZ`, `DOR`, `IRRESPONSIVO`). O backend calcula o escore **MEWS** (0–14) e o devolve como `mewsScore`; `GET /api/triagens/:id/mews` detalha a pontuação, a faixa de risco e a conduta sugerida.
+
+### Prontuário — SOAP
+
+`POST /api/prontuarios` passa a aceitar `subjetivo`, `objetivo`, `avaliacao`, `plano` (ao menos um), mais `cid10`, `cid10Secundarios`, `assinadoDigitalmente` e `dataHora`. `unidadeSaudeId` é opcional: quando ausente, o backend resolve pelo vínculo do profissional. `POST /api/prontuarios/:id/assinar` grava o `certificadoHash` (selo SHA-256 de integridade — não é assinatura ICP-Brasil).
+
+### Prescrição estruturada
+
+`POST /api/prescricoes` obrigatórios: `pacienteId` + (`medicamento` e `posologia`) **ou** `detalhesPrescricao` (formato antigo, ainda aceito). Opcionais: `via`, `duracao`, `status`, `cid10`, `unidadeSaudeId` (resolvida pelo vínculo quando ausente). O backend lança automaticamente uma entrada no prontuário (campo `plano`).
+
 ## Campos obrigatórios por aba
 
 ### Pacientes: `POST /api/pacientes`

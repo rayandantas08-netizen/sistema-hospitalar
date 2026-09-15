@@ -95,7 +95,120 @@ Estrutura equivalente às prescrições, com anonimização obrigatória e gera�
 | PUT    | /triagens/:id                                | Atualiza                         | ENFERMEIRO (criador) |
 | DELETE | /triagens/:id                                | Soft delete                      | ENFERMEIRO (criador) |
 
-### 2.8 Unidades de Saúde (`/unidades-saude`)
+### 2.8 Salas por Unidade de Saúde (`/salas`)
+
+Tabela `sala`: `id`, `unidade_saude_id`, `nome`, `tipo` (ex.: "Consultório médico", "Emergência", "Farmácia", "Triagem", "Exames"), `responsavel_id` (médico ou enfermeiro), `status` (`LIVRE`, `EM_ATENDIMENTO`, `MONITORADA`, `INATIVA`).
+
+| Método | Endpoint                            | Descrição                                            | Papéis Permitidos             |
+|--------|-------------------------------------|------------------------------------------------------|-------------------------------|
+| GET    | /salas                              | Lista salas (join com responsável e unidade)         | ADMINISTRADOR, MÉDICO, ENFERMEIRO |
+| GET    | /salas/:id                          | Detalhes da sala                                     | ADMINISTRADOR, MÉDICO, ENFERMEIRO |
+| POST   | /salas                              | Cria sala                                            | ADMINISTRADOR                 |
+| PUT    | /salas/:id                          | Atualiza sala e responsável (`responsavelId: null` limpa) | ADMINISTRADOR, ENFERMEIRO |
+| DELETE | /salas/:id                          | Soft delete (bloqueado se houver chamada em andamento) | ADMINISTRADOR               |
+| GET    | /unidades/:unidadeSaudeId/salas     | Salas de uma unidade específica                      | ADMINISTRADOR, MÉDICO, ENFERMEIRO |
+| GET    | /unidades-saude/:unidadeSaudeId/salas | Alias do endpoint acima                            | ADMINISTRADOR, MÉDICO, ENFERMEIRO |
+
+**Regras de negócio**: o responsável precisa ser um `funcionario` ativo com papel MEDICO ou ENFERMEIRO; não pode haver duas salas ativas com o mesmo nome na mesma unidade (409); a listagem é paginada (`?pagina=1&limite=20`, aceita também `page`/`limit`) e devolve `{data, paginacao}`.
+
+### 2.8.1 Chamadas de Pacientes (`/chamadas`) — Painel de TV
+
+Tabela `chamada`: `id`, `paciente_id`, `sala_id`, `sala` (nome denormalizado), `senha` (ex.: `A014`, `V001`), `prioridade` (`Vermelho`, `Laranja`, `Amarelo`, `Verde`, `Azul`), `status` (`CHAMANDO`, `EM_ATENDIMENTO`, `FINALIZADO`, `CANCELADO`), `chamado_em`, `atendido_em`, `finalizado_em`, `profissional_id`, `triagem_id`, `unidade_saude_id`.
+
+| Método | Endpoint                      | Descrição                                                       | Papéis Permitidos / Acesso          |
+|--------|-------------------------------|-----------------------------------------------------------------|-------------------------------------|
+| POST   | /chamadas/chamar              | Registra a chamada e publica evento no painel (SSE + WebSocket) | ADMINISTRADOR, MÉDICO, ENFERMEIRO   |
+| GET    | /chamadas/ultimas             | Últimas 10 chamadas para o painel de TV (`?limite=10`)          | JWT **ou** `PAINEL_TV_TOKEN`        |
+| GET    | /chamadas/fila                | Fila de pacientes triados aguardando chamada                    | ADMINISTRADOR, MÉDICO, ENFERMEIRO   |
+| GET    | /chamadas                     | Histórico paginado (`?status=`, `?unidadeSaudeId=`)             | ADMINISTRADOR, MÉDICO, ENFERMEIRO   |
+| GET    | /chamadas/:id                 | Detalhes da chamada                                             | ADMINISTRADOR, MÉDICO, ENFERMEIRO   |
+| PATCH  | /chamadas/:id/finalizar       | Marca o atendimento como concluído (`status` FINALIZADO/CANCELADO) | ADMINISTRADOR, MÉDICO, ENFERMEIRO |
+| PATCH  | /chamadas/:id/iniciar         | Paciente entrou no consultório (CHAMANDO → EM_ATENDIMENTO)       | ADMINISTRADOR, MÉDICO, ENFERMEIRO   |
+| GET    | /chamadas/eventos             | Stream SSE do painel (EventSource)                              | JWT **ou** `PAINEL_TV_TOKEN`        |
+| GET    | /chamadas/realtime            | Diagnóstico do canal em tempo real (conexões ativas)            | JWT **ou** `PAINEL_TV_TOKEN`        |
+| WS     | /chamadas/ws                  | WebSocket do painel (`ws://<host>/api/chamadas/ws?token=...`)    | JWT **ou** `PAINEL_TV_TOKEN`        |
+
+**Regras de negócio**: a senha é gerada automaticamente quando não enviada (prefixo `V` para Vermelho/Laranja, `A` para as demais, sequencial do dia, 3 dígitos); um paciente não pode ter duas chamadas abertas (409); a sala passa para `EM_ATENDIMENTO` ao receber a chamada e volta para `LIVRE` quando o atendimento é finalizado; sala `INATIVA` não recebe chamadas.
+
+**Eventos publicados**: `chamada:criada`, `chamada:atualizada`, `chamada:finalizada`, `sala:atualizada`, `leito:atualizado`, `triagem:criada`.
+
+### 2.8.2 Leitos e Internação (`/leitos`)
+
+Tabela `leito`: `id`, `unidade_saude_id`, `nome_ou_numero` (ex.: "Leito 01"), `setor` (`SALA_VERMELHA`, `UTI_GERAL`, `ENFERMARIA`, `ISOLAMENTO`), `status` (`LIVRE`, `OCUPADO`, `HIGIENIZACAO`, `MANUTENCAO`, `ISOLAMENTO`), `paciente_id`, `ventilador_mecanico`, `monitor_cardiaco`, `diagnostico`.
+
+| Método | Endpoint                | Descrição                                                        | Papéis Permitidos                  |
+|--------|-------------------------|------------------------------------------------------------------|------------------------------------|
+| GET    | /leitos?setor=SALA_VERMELHA | Lista leitos (filtros `setor`, `status`, `unidadeSaudeId`)     | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| GET    | /leitos/resumo          | Ocupação por status, taxa de ocupação e ventiladores disponíveis | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| GET    | /leitos/:id             | Detalhes do leito                                                | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| POST   | /leitos                 | Cria leito                                                       | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| PUT    | /leitos/:id             | Atualiza leito (internação, equipamentos, diagnóstico)           | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| PATCH  | /leitos/:id/status      | Atualiza apenas o status (livre/ocupado/higienização/manutenção)  | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| GET    | /sala-vermelha/leitos   | Leitos do setor SALA_VERMELHA                                    | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+
+**Regras de negócio**: `OCUPADO` exige paciente vinculado (validado no DTO e no banco); `LIVRE` e `HIGIENIZACAO` limpam `paciente_id` e `diagnostico` (alta/saída para higienização); um paciente não pode ocupar dois leitos simultaneamente (409); `nomeOuNumero` é único por unidade (409).
+
+### 2.8.3 Sala Vermelha (`/sala-vermelha`)
+
+| Método | Endpoint             | Descrição                                                     | Papéis Permitidos                  |
+|--------|----------------------|---------------------------------------------------------------|------------------------------------|
+| GET    | /sala-vermelha/fila  | Triagens classificadas como **VERMELHO** aguardando chamada   | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| GET    | /sala-vermelha/leitos| Leitos do setor SALA_VERMELHA                                 | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+
+Cada item da fila traz `triagemId`, `pacienteId`, `pacienteNome`, `senha`, `classificacaoRisco`, `prioridade`, `mewsScore`, `queixaPrincipal`, `minutosAguardando`, `tempoAlvoMinutos` e `excedeTempoAlvo`.
+
+### 2.8.4 Triagem com Protocolo de Manchester + MEWS (`/triagens`)
+
+A triagem grava a classificação de risco (`nivel_gravidade` / `classificacaoRisco`: VERMELHO, LARANJA, AMARELO, VERDE, AZUL), os sinais vitais em JSONB (`pressaoArterialSistolica`, `pressaoArterialDiastolica`, `frequenciaCardiaca`, `frequenciaRespiratoria`, `temperatura`, `saturacaoOxigenio`, `nivelDor`, `estadoConsciente`, `escalaAvpu`) e o **escore MEWS** (0–14).
+
+| Método | Endpoint                                          | Descrição                                                        | Papéis Permitidos                  |
+|--------|---------------------------------------------------|------------------------------------------------------------------|------------------------------------|
+| POST   | /triagens                                         | Cria triagem (calcula classificação e MEWS automaticamente)       | ENFERMEIRO, ADMINISTRADOR          |
+| GET    | /triagens                                         | Lista com paginação e filtros (`unidadeSaudeId`, `classificacaoRisco`, `pacienteId`, `mewsMinimo`) | ADMINISTRADOR, MÉDICO, ENFERMEIRO |
+| GET    | /triagens/:id/mews                                | Escore MEWS da triagem (gravado + recalculado, faixa e conduta)   | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| GET    | /triagens/fila                                    | Mesma fila de `/sala-vermelha/fila`                               | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| GET    | /triagens/:id                                     | Detalhes da triagem                                               | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| PUT    | /triagens/:id                                     | Atualiza triagem                                                  | ENFERMEIRO, ADMINISTRADOR          |
+| DELETE | /triagens/:id                                     | Soft delete                                                       | ENFERMEIRO, ADMINISTRADOR          |
+
+**Compatibilidade**: sem parâmetros de paginação, `GET /api/triagens` continua devolvendo um **array** (contrato antigo, agora enriquecido com `mewsScore`, `classificacaoRisco`, `pacienteNome`); com `?pagina=&limite=` devolve `{data, paginacao}`.
+
+**MEWS**: PAS ≤70 (3 pts) · FC ≤40 ou ≥130 (até 3 pts) · FR <9 ou ≥30 (até 3 pts) · temperatura <35 °C ou ≥38,5 °C (2 pts) · AVPU (0–3 pts). Faixas: 0–2 baixo, 3–4 moderado, ≥5 alto, ≥7 crítico.
+
+### 2.8.5 Prontuário Eletrônico (PEP SOAP) (`/prontuarios`)
+
+Tabela `prontuario`: `paciente_id`, `profissional_id` (exposto como `medicoId`), `unidade_saude_id`, `data_hora`, `subjetivo`, `objetivo`, `avaliacao`, `plano`, `cid10`, `cid10_secundarios`, `assinado_digitalmente`, `certificado_hash`.
+
+| Método | Endpoint                  | Descrição                                                          | Papéis Permitidos                  |
+|--------|---------------------------|--------------------------------------------------------------------|------------------------------------|
+| GET    | /prontuarios              | Lista (filtros `pacienteId`, `unidadeSaudeId`, `profissionalId`, `cid10`, `apenasAssinados` + paginação) | ADMINISTRADOR, MÉDICO, ENFERMEIRO |
+| POST   | /prontuarios              | Cria entrada SOAP (ao menos S, O, A, P ou descrição)                | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| GET    | /prontuarios/:id          | Detalhes                                                           | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| GET    | /prontuarios/pacientes/:pacienteId | Prontuários do paciente                                   | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| PUT    | /prontuarios/:id          | Atualiza conteúdo SOAP                                             | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| POST   | /prontuarios/:id/assinar  | Assina o prontuário (grava `certificadoHash` SHA-256; 409 se já assinado) | MEDICO (autor), ADMINISTRADOR |
+| GET    | /prontuarios/:id/pdf      | Gera PDF anonimizado                                               | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| DELETE | /prontuarios/:id          | Soft delete                                                        | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+
+> **Nota sobre assinatura**: `certificado_hash` é um **selo de integridade** (SHA-256 do conteúdo canônico) que detecta alteração posterior. Não substitui uma assinatura digital ICP-Brasil, que exigiria certificado A1/A3 do profissional.
+
+### 2.8.6 Prescrições estruturadas (`/prescricoes`)
+
+Tabela `prescricao`: `paciente_id`, `profissional_id`, `unidade_saude_id` (opcional — resolvida pelo vínculo do profissional), `medicamento`, `via`, `posologia`, `duracao`, `status` (`ATIVA`, `SUSPENSA`, `CANCELADA`, `CONCLUIDA`), `detalhes_prescricao` (legado), `cid10`.
+
+| Método | Endpoint                          | Descrição                                                        | Papéis Permitidos                  |
+|--------|-----------------------------------|------------------------------------------------------------------|------------------------------------|
+| GET    | /prescricoes                      | Lista (filtros `pacienteId`, `unidadeSaudeId`, `profissionalId`, `status` + paginação) | ADMINISTRADOR, MÉDICO, ENFERMEIRO |
+| POST   | /prescricoes                      | Cria prescrição (medicamento + posologia obrigatórios)            | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| GET    | /prescricoes/:id                  | Detalhes                                                          | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| GET    | /prescricoes/pacientes/:pacienteId| Prescrições do paciente                                           | MÉDICO, ENFERMEIRO                 |
+| PUT    | /prescricoes/:id                  | Atualiza prescrição                                               | MÉDICO, ENFERMEIRO                 |
+| GET    | /prescricoes/:id/pdf              | Gera PDF anonimizado                                              | ADMINISTRADOR, MÉDICO, ENFERMEIRO  |
+| DELETE | /prescricoes/:id                  | Soft delete                                                       | MÉDICO                             |
+
+**Regras de negócio**: cada prescrição gera automaticamente uma entrada no prontuário (campo `plano` do SOAP); ENFERMEIRO só prescreve em unidade do tipo UPA.
+
+### 2.9 Unidades de Saúde (`/unidades-saude`)
 
 | Método | Endpoint                                 | Descrição           | Papéis Permitidos |
 |--------|------------------------------------------|---------------------|-------------------|
@@ -107,7 +220,7 @@ Estrutura equivalente às prescrições, com anonimização obrigatória e gera�
 | DELETE | /unidades-saude/:id                      | Soft delete         | ADMINISTRADOR     |
 | POST   | /unidades-saude/:id/funcionarios/:funcId | Associa funcionário | ADMINISTRADOR     |
 
-### 2.9 Inteligência Artificial (`/ia`) — **Novo em 3.2.0**
+### 2.10 Inteligência Artificial (`/ia`) — **Novo em 3.2.0**
 
 Todos os relatórios são gerados com **dados agregados e anonimizados** (conformidade total com LGPD), utilizando Groq SDK para processamento rápido e respostas em português brasileiro.
 
