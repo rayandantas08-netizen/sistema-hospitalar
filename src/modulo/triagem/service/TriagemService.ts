@@ -18,7 +18,8 @@ export class TriagemService {
         enfermeiroId: string,
         unidadeSaudeId: string,
         sinaisVitais: SinaisVitais,
-        queixaPrincipal: string
+        queixaPrincipal: string,
+        salaId?: string
     ): Promise<{ data: Triagem | null, error: Error | null }> {
         try {
             if (!pacienteId || !enfermeiroId || !unidadeSaudeId || !sinaisVitais || !queixaPrincipal) {
@@ -67,6 +68,22 @@ export class TriagemService {
                 throw new Error('Unidade de saúde não encontrada');
             }
 
+            // Sala da triagem (opcional): precisa estar ativa e ser da mesma
+            // unidade, senão o médico chamaria o paciente para a sala errada.
+            if (salaId) {
+                const {data: sala} = await supabase
+                    .from('sala')
+                    .select('id, unidade_saude_id, ativo')
+                    .eq('id', salaId)
+                    .maybeSingle();
+                if (!sala || !sala.ativo) {
+                    throw new Error('Sala não encontrada (ou inativa)');
+                }
+                if (sala.unidade_saude_id !== unidadeSaudeId) {
+                    throw new Error('A sala informada não pertence a esta unidade de saúde');
+                }
+            }
+
             const pacienteObj = new Paciente(
                 paciente.id,
                 paciente.nome,
@@ -102,18 +119,26 @@ export class TriagemService {
             const escalaAvpu = resultadoMews?.escalaAvpu ?? MewsService.derivarAvpu(sinaisVitais.estadoConsciente);
             const sinaisVitaisNormalizados: SinaisVitais = {...sinaisVitais, escalaAvpu};
 
+            // sala_id só entra no payload quando informada: instalações que
+            // ainda não rodaram a migration da coluna continuam criando
+            // triagem normalmente (degradação graceful com autoDeploy).
+            const registro: Record<string, any> = {
+                paciente_id: pacienteId,
+                enfermeiro_id: enfermeiroId,
+                unidade_saude_id: unidadeSaudeId,
+                nivel_gravidade: nivelGravidade,
+                sinais_vitais: sinaisVitaisNormalizados,
+                queixa_principal: queixaPrincipal,
+                mews_score: resultadoMews?.escore ?? null,
+                ativo: true,
+            };
+            if (salaId) {
+                registro.sala_id = salaId;
+            }
+
             const {data, error} = await supabase
                 .from('triagem')
-                .insert({
-                    paciente_id: pacienteId,
-                    enfermeiro_id: enfermeiroId,
-                    unidade_saude_id: unidadeSaudeId,
-                    nivel_gravidade: nivelGravidade,
-                    sinais_vitais: sinaisVitaisNormalizados,
-                    queixa_principal: queixaPrincipal,
-                    mews_score: resultadoMews?.escore ?? null,
-                    ativo: true,
-                })
+                .insert(registro)
                 .select()
                 .single();
 
@@ -149,27 +174,38 @@ export class TriagemService {
         paginacao: ParametrosPaginacao
     ): Promise<{ data: RespostaPaginada<any> | null, error: Error | null }> {
         try {
-            let consulta = supabaseAdmin
-                .from('triagem')
-                .select(
-                    `
+            const SELECT_BASE = `
                         *,
                         paciente:paciente!paciente_id (nome),
                         enfermeiro:funcionario!enfermeiro_id (nome),
                         unidade:unidade_saude!unidade_saude_id (nome)
-                    `,
-                    {count: 'exact'}
-                )
-                .eq('ativo', true)
-                .order('created_at', {ascending: false})
-                .range(paginacao.de, paginacao.ate);
+                    `;
+            const SELECT_COM_SALA = `${SELECT_BASE}, sala:sala!sala_id (nome)`;
 
-            if (filtros.unidadeSaudeId) consulta = consulta.eq('unidade_saude_id', filtros.unidadeSaudeId);
-            if (filtros.classificacaoRisco) consulta = consulta.eq('nivel_gravidade', filtros.classificacaoRisco);
-            if (filtros.pacienteId) consulta = consulta.eq('paciente_id', filtros.pacienteId);
-            if (typeof filtros.mewsMinimo === 'number') consulta = consulta.gte('mews_score', filtros.mewsMinimo);
+            const montarConsulta = (select: string) => {
+                let consulta = supabaseAdmin
+                    .from('triagem')
+                    .select(select, {count: 'exact'})
+                    .eq('ativo', true)
+                    .order('created_at', {ascending: false})
+                    .range(paginacao.de, paginacao.ate);
 
-            const {data, error, count} = await consulta;
+                if (filtros.unidadeSaudeId) consulta = consulta.eq('unidade_saude_id', filtros.unidadeSaudeId);
+                if (filtros.classificacaoRisco) consulta = consulta.eq('nivel_gravidade', filtros.classificacaoRisco);
+                if (filtros.pacienteId) consulta = consulta.eq('paciente_id', filtros.pacienteId);
+                if (typeof filtros.mewsMinimo === 'number') consulta = consulta.gte('mews_score', filtros.mewsMinimo);
+                return consulta;
+            };
+
+            let {data, error, count} = await montarConsulta(SELECT_COM_SALA);
+            if (error && /sala/i.test(error.message)) {
+                // Instalação ainda sem a migration da coluna sala_id: devolve a
+                // lista sem o nome da sala em vez de quebrar a tela de triagem.
+                const retry = await montarConsulta(SELECT_BASE);
+                data = retry.data as typeof data;
+                error = retry.error;
+                count = retry.count;
+            }
             if (error) throw new Error(`Erro ao listar triagens: ${error.message}`);
 
             const triagens = (data ?? []).map((d: any) => this.mapearTriagemCompleta(d));
@@ -205,6 +241,8 @@ export class TriagemService {
             pacienteNome: d.paciente?.nome ?? 'Paciente não identificado',
             enfermeiroNome: d.enfermeiro?.nome ?? null,
             unidadeNome: d.unidade?.nome ?? null,
+            salaId: d.sala_id ?? null,
+            salaNome: d.sala?.nome ?? null,
             // Compatibilidade com o contrato antigo do GET /api/triagens
             paciente_nome: d.paciente?.nome ?? '',
             enfermeiro_nome: d.enfermeiro?.nome ?? '',

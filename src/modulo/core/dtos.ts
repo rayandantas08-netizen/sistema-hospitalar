@@ -240,8 +240,14 @@ const NivelGravidadeSchema = z.nativeEnum(NivelGravidade).refine(
 
 export const CreateTriagemDTO = z.object({
     pacienteId: z.string().uuid('ID do paciente inválido'),
-    enfermeiroId: z.string().uuid('ID do enfermeiro inválido'),
+    // Opcional: o controller sempre usa o id do usuário autenticado (JWT),
+    // então o frontend não precisa enviar este campo.
+    enfermeiroId: z.string().uuid('ID do enfermeiro inválido').optional(),
     unidadeSaudeId: z.string().uuid('ID da unidade de saúde inválido'),
+    // Sala onde a triagem está acontecendo (ex.: "Sala de Triagem 1").
+    // Opcional para não quebrar clientes antigos; quando informada, precisa
+    // ser uma sala ativa da mesma unidade (validado no service).
+    salaId: z.string().uuid('ID da sala inválido').optional(),
     nivelGravidade: NivelGravidadeSchema.optional(),
     sinaisVitais: SinaisVitaisSchema,
     queixaPrincipal: z.string().min(1, 'Queixa principal é obrigatória'),

@@ -28,7 +28,8 @@ export class TriagemController {
                 enfermeiroId,
                 validated.unidadeSaudeId,
                 validated.sinaisVitais,
-                validated.queixaPrincipal
+                validated.queixaPrincipal,
+                validated.salaId
             );
 
             if (error || !data) {
