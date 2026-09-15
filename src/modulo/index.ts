@@ -26,6 +26,9 @@ router.use('/prescricoes', prescricaoRoutes);
 router.use('/prontuarios', prontuarioRoutes);
 router.use('/triagens', triagemRoutes);
 router.use('/unidades-saude', unidadeSaudeRoutes);
+// Alias legado usado pelo frontend: mantém /api/unidades para listagem e CRUD
+// de unidades, sem remover a nomenclatura oficial /api/unidades-saude.
+router.use('/unidades', unidadeSaudeRoutes);
 router.use('/ia', iaRoutes);
 
 // --- Salas -----------------------------------------------------------------
