@@ -7,8 +7,10 @@ dist
 
 # Arquivos que não devem ser versionados
 prontuario.controller.spec.ts
-jest.config.js
 reqs
+
+# OBS: jest.config.js deixou de ser ignorado — agora versionamos a configuração
+# de teste em jest.config.js + tests/ (npm test roda 61 testes).
 
 # Logs
 combined.log

@@ -1,0 +1,8 @@
+{
+  "//": "Usado apenas pelo ESLint: inclui src/ e tests/ sem que os testes entrem no build (npm run build usa o tsconfig.json).",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/**/*", "tests/**/*"]
+}

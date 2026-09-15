@@ -2,10 +2,12 @@ import {Request, Response} from 'express';
 import {ProntuarioService} from '../service/ProntuarioService';
 import {PacienteService} from '../../paciente/service/PacienteService';
 import {TriagemService} from '../../triagem/service/TriagemService';
-import {CreateProntuarioDTO, UpdateProntuarioDTO} from '../../core/dtos';
+import {CreateProntuarioDTO, ListProntuariosQueryDTO, UpdateProntuarioDTO} from '../../core/dtos';
 import {z} from 'zod';
 import {supabaseClient} from '../../../shared/database/supabase';
 import {compileToPDF} from '../../../utils/pdfCompiler';
+import {resolverPaginacao} from '../../core/utils/paginacao';
+import {statusDoErro} from '../../core/utils/respostaHttp';
 import winston from 'winston';
 
 const logger = winston.createLogger({
@@ -44,17 +46,15 @@ export class ProntuarioController {
 
             logger.info('Creating prontuário', {validated, usuarioId});
 
-            const {data, error} = await this.prontuarioService.createProntuario(
-                validated.pacienteId,
-                usuarioId,
-                validated.unidadeSaudeId,
-                validated.descricao,
-                validated.cid10
-            );
+            const {data, error} = await this.prontuarioService.criarProntuario({
+                ...validated,
+                profissionalId: usuarioId,
+            });
 
             if (error || !data) {
                 logger.error('Failed to create prontuário', {error: error?.message});
-                res.status(400).json({error: error?.message || 'Erro ao criar prontuário'});
+                const status = statusDoErro(error, 400);
+                res.status(status).json({error: error?.message || 'Erro ao criar prontuário'});
                 return;
             }
             res.status(201).json(data);
@@ -73,14 +73,41 @@ export class ProntuarioController {
             const usuarioId = req.user?.id;
             if (!usuarioId) throw new Error('ID do usuário não encontrado');
 
+            const query = ListProntuariosQueryDTO.parse(req.query);
+            const temPaginacao = [query.pagina, query.page, query.limite, query.limit].some(
+                (valor) => valor !== undefined
+            );
+
             logger.info('Listing prontuários', {usuarioId});
-            const {data, error} = await this.prontuarioService.getAllProntuarios(usuarioId);
+
+            if (!temPaginacao && !query.pacienteId && !query.unidadeSaudeId && !query.profissionalId) {
+                // Contrato antigo: array simples com os últimos 100 prontuários.
+                const {data, error} = await this.prontuarioService.getAllProntuarios(usuarioId);
+                if (error) {
+                    logger.error('Failed to list prontuários', {error: error?.message});
+                    res.status(400).json({error: error?.message});
+                    return;
+                }
+                res.json(data);
+                return;
+            }
+
+            const {data, error} = await this.prontuarioService.listProntuariosPaginados(
+                {
+                    pacienteId: query.pacienteId,
+                    unidadeSaudeId: query.unidadeSaudeId,
+                    profissionalId: query.profissionalId,
+                    cid10: query.cid10,
+                    apenasAssinados: query.apenasAssinados,
+                },
+                resolverPaginacao(query)
+            );
             if (error) {
                 logger.error('Failed to list prontuários', {error: error?.message});
                 res.status(400).json({error: error?.message});
                 return;
             }
-            res.json(data);
+            res.json(temPaginacao ? data : (data as any)?.data ?? []);
         } catch (err: any) {
             logger.error('Error in list', {error: err.message});
             res.status(400).json({error: err.message});
@@ -139,7 +166,15 @@ export class ProntuarioController {
                 id,
                 validated.descricao,
                 validated.cid10,
-                usuarioId
+                usuarioId,
+                {
+                    subjetivo: validated.subjetivo,
+                    objetivo: validated.objetivo,
+                    avaliacao: validated.avaliacao,
+                    plano: validated.plano,
+                    cid10Secundarios: validated.cid10Secundarios,
+                    assinadoDigitalmente: validated.assinadoDigitalmente,
+                }
             );
             if (error || !data) {
                 logger.error('Prontuário not found for update', {id, error: error?.message});
@@ -173,6 +208,27 @@ export class ProntuarioController {
             res.status(204).send();
         } catch (err: any) {
             logger.error('Error in delete', {error: err.message});
+            res.status(400).json({error: err.message});
+        }
+    }
+
+    /**
+     * POST /api/prontuarios/:id/assinar
+     * Grava o selo de integridade (SHA-256) do conteúdo do prontuário.
+     */
+    async assinar(req: AuthenticatedRequest, res: Response): Promise<void> {
+        try {
+            const id = req.params.id;
+            const usuarioId = req.user?.id;
+            if (!usuarioId) throw new Error('ID do usuário não encontrado');
+
+            const {data, error} = await this.prontuarioService.assinarProntuario(id, usuarioId);
+            if (error || !data) {
+                res.status(statusDoErro(error, 400)).json({error: error?.message || 'Erro ao assinar prontuário'});
+                return;
+            }
+            res.json(data);
+        } catch (err: any) {
             res.status(400).json({error: err.message});
         }
     }

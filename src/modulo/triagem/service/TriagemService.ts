@@ -1,11 +1,16 @@
-import {supabaseClient} from '../../../shared/database/supabase';
+import {supabaseClient, supabaseServiceClient} from '../../../shared/database/supabase';
 import {Triagem} from '../model/Triagem';
 import {Paciente} from '../../paciente/model/Paciente';
-import {NivelGravidade, Papeis} from '../../core/model/Enums';
-import {SinaisVitais} from '../../core/model/Interfaces';
+import {EscalaAvpu, NivelGravidade, Papeis} from '../../core/model/Enums';
+import {ItemFilaAtendimento, RespostaPaginada, SinaisVitais} from '../../core/model/Interfaces';
+import {nivelGravidadeParaPrioridade, ordenarFilaPorGravidade, tempoAlvoMinutos} from '../../core/model/Prioridade';
+import {ParametrosPaginacao, montarRespostaPaginada} from '../../core/utils/paginacao';
 import {PrioridadeService} from './PrioridadeService';
+import {MewsService} from './MewsService';
 
+// Leitura/escrita com service-role: o middleware já autorizou o usuário.
 const supabase = supabaseClient;
+const supabaseAdmin = supabaseServiceClient;
 
 export class TriagemService {
     async createTriagem(
@@ -92,6 +97,11 @@ export class TriagemService {
                 throw new Error(`Erro ao calcular nível de gravidade: ${gravidadeError?.message || 'Erro desconhecido'}`);
             }
 
+            // Escore MEWS: apoio à decisão, calculado e gravado junto da triagem.
+            const {data: resultadoMews} = MewsService.calcular(sinaisVitais);
+            const escalaAvpu = resultadoMews?.escalaAvpu ?? MewsService.derivarAvpu(sinaisVitais.estadoConsciente);
+            const sinaisVitaisNormalizados: SinaisVitais = {...sinaisVitais, escalaAvpu};
+
             const {data, error} = await supabase
                 .from('triagem')
                 .insert({
@@ -99,8 +109,9 @@ export class TriagemService {
                     enfermeiro_id: enfermeiroId,
                     unidade_saude_id: unidadeSaudeId,
                     nivel_gravidade: nivelGravidade,
-                    sinais_vitais: sinaisVitais,
+                    sinais_vitais: sinaisVitaisNormalizados,
                     queixa_principal: queixaPrincipal,
+                    mews_score: resultadoMews?.escore ?? null,
                     ativo: true,
                 })
                 .select()
@@ -115,9 +126,230 @@ export class TriagemService {
                 data.unidade_saude_id,
                 data.nivel_gravidade,
                 data.sinais_vitais,
-                data.queixa_principal
+                data.queixa_principal,
+                data.mews_score ?? resultadoMews?.escore ?? null
             );
             return {data: triagem, error: null};
+        } catch (error) {
+            return {data: null, error: error instanceof Error ? error : new Error('Erro desconhecido')};
+        }
+    }
+
+
+    // =======================================================================
+    // Listagem paginada (GET /api/triagens?pagina=1&limite=20&unidadeSaudeId=...)
+    // =======================================================================
+    async listTriagensPaginadas(
+        filtros: {
+            unidadeSaudeId?: string;
+            classificacaoRisco?: NivelGravidade;
+            pacienteId?: string;
+            mewsMinimo?: number;
+        },
+        paginacao: ParametrosPaginacao
+    ): Promise<{ data: RespostaPaginada<any> | null, error: Error | null }> {
+        try {
+            let consulta = supabaseAdmin
+                .from('triagem')
+                .select(
+                    `
+                        *,
+                        paciente:paciente!paciente_id (nome),
+                        enfermeiro:funcionario!enfermeiro_id (nome),
+                        unidade:unidade_saude!unidade_saude_id (nome)
+                    `,
+                    {count: 'exact'}
+                )
+                .eq('ativo', true)
+                .order('created_at', {ascending: false})
+                .range(paginacao.de, paginacao.ate);
+
+            if (filtros.unidadeSaudeId) consulta = consulta.eq('unidade_saude_id', filtros.unidadeSaudeId);
+            if (filtros.classificacaoRisco) consulta = consulta.eq('nivel_gravidade', filtros.classificacaoRisco);
+            if (filtros.pacienteId) consulta = consulta.eq('paciente_id', filtros.pacienteId);
+            if (typeof filtros.mewsMinimo === 'number') consulta = consulta.gte('mews_score', filtros.mewsMinimo);
+
+            const {data, error, count} = await consulta;
+            if (error) throw new Error(`Erro ao listar triagens: ${error.message}`);
+
+            const triagens = (data ?? []).map((d: any) => this.mapearTriagemCompleta(d));
+            return {
+                data: montarRespostaPaginada(triagens, count ?? triagens.length, paginacao.pagina, paginacao.limite),
+                error: null,
+            };
+        } catch (error) {
+            return {data: null, error: error instanceof Error ? error : new Error('Erro desconhecido')};
+        }
+    }
+
+    /**
+     * Mapeia a triagem preservando as chaves antigas (snake_case, usadas pelo
+     * contrato atual) e adicionando os campos novos em camelCase: mewsScore,
+     * classificacaoRisco, sinaisVitais/escalaAvpu, pacienteNome e unidadeNome.
+     */
+    private mapearTriagemCompleta(d: any): Record<string, any> {
+        const sinaisVitais = d.sinais_vitais ?? {};
+        return {
+            id: d.id,
+            createdAt: d.created_at,
+            pacienteId: d.paciente_id,
+            enfermeiroId: d.enfermeiro_id,
+            unidadeSaudeId: d.unidade_saude_id,
+            nivelGravidade: d.nivel_gravidade,
+            classificacaoRisco: d.nivel_gravidade,
+            mewsScore: d.mews_score ?? null,
+            sinaisVitais,
+            escalaAvpu: sinaisVitais.escalaAvpu ?? null,
+            queixaPrincipal: d.queixa_principal,
+            dataTriagem: d.data_triagem ?? d.created_at,
+            pacienteNome: d.paciente?.nome ?? 'Paciente não identificado',
+            enfermeiroNome: d.enfermeiro?.nome ?? null,
+            unidadeNome: d.unidade?.nome ?? null,
+            // Compatibilidade com o contrato antigo do GET /api/triagens
+            paciente_nome: d.paciente?.nome ?? '',
+            enfermeiro_nome: d.enfermeiro?.nome ?? '',
+            data_triagem: d.data_triagem ?? d.created_at,
+            nivel_gravidade: d.nivel_gravidade,
+            queixa_principal: d.queixa_principal,
+        };
+    }
+
+    // =======================================================================
+    // GET /api/sala-vermelha/fila — somente classificação VERMELHO aguardando
+    // =======================================================================
+    async getFilaSalaVermelha(
+        filtros: {unidadeSaudeId?: string} = {},
+        paginacao?: ParametrosPaginacao
+    ): Promise<{ data: ItemFilaAtendimento[] | RespostaPaginada<ItemFilaAtendimento> | null, error: Error | null }> {
+        try {
+            let consulta = supabaseAdmin
+                .from('triagem')
+                .select(
+                    `
+                        id,
+                        paciente_id,
+                        unidade_saude_id,
+                        nivel_gravidade,
+                        mews_score,
+                        queixa_principal,
+                        created_at,
+                        paciente:paciente!paciente_id (nome)
+                    `
+                )
+                .eq('ativo', true)
+                .eq('nivel_gravidade', NivelGravidade.Vermelho)
+                .order('created_at', {ascending: true})
+                .limit(200);
+
+            if (filtros.unidadeSaudeId) consulta = consulta.eq('unidade_saude_id', filtros.unidadeSaudeId);
+
+            const {data: triagens, error} = await consulta;
+            if (error) throw new Error(`Erro ao listar fila da Sala Vermelha: ${error.message}`);
+
+            // Pacientes já chamados/em atendimento saem da fila de espera.
+            const {data: chamadasAbertas} = await supabaseAdmin
+                .from('chamada')
+                .select('paciente_id, triagem_id, senha, status')
+                .eq('ativo', true)
+                .in('status', ['CHAMANDO', 'EM_ATENDIMENTO']);
+
+            const pacientesEmAtendimento = new Set(
+                (chamadasAbertas ?? [])
+                    .filter((c: any) => c.status === 'EM_ATENDIMENTO')
+                    .map((c: any) => c.paciente_id)
+            );
+            const senhasAbertas = new Map((chamadasAbertas ?? []).map((c: any) => [c.triagem_id, c.senha]));
+            const triagensChamadas = new Set((chamadasAbertas ?? []).map((c: any) => c.triagem_id).filter(Boolean));
+
+            const maisRecentePorPaciente = new Map<string, any>();
+            for (const triagem of triagens ?? []) {
+                if (!maisRecentePorPaciente.has(triagem.paciente_id)) {
+                    maisRecentePorPaciente.set(triagem.paciente_id, triagem);
+                }
+            }
+
+            const agora = Date.now();
+            const fila: ItemFilaAtendimento[] = [];
+
+            for (const triagem of maisRecentePorPaciente.values()) {
+                if (triagensChamadas.has(triagem.id)) continue;
+                if (pacientesEmAtendimento.has(triagem.paciente_id)) continue;
+
+                const aguardandoDesde = triagem.created_at ?? new Date().toISOString();
+                const minutosAguardando = Math.max(
+                    0,
+                    Math.floor((agora - new Date(aguardandoDesde).getTime()) / 60_000)
+                );
+                const alvo = tempoAlvoMinutos(triagem.nivel_gravidade);
+
+                fila.push({
+                    triagemId: triagem.id,
+                    pacienteId: triagem.paciente_id,
+                    pacienteNome: triagem.paciente?.nome ?? 'Paciente não identificado',
+                    senha: senhasAbertas.get(triagem.id) ?? null,
+                    classificacaoRisco: triagem.nivel_gravidade,
+                    prioridade: nivelGravidadeParaPrioridade(triagem.nivel_gravidade) ?? 'Vermelho',
+                    mewsScore: triagem.mews_score ?? null,
+                    queixaPrincipal: triagem.queixa_principal,
+                    unidadeSaudeId: triagem.unidade_saude_id,
+                    aguardandoDesde,
+                    minutosAguardando,
+                    // Sala Vermelha: tempo alvo é imediato (0 min)
+                    tempoAlvoMinutos: alvo,
+                    excedeTempoAlvo: alvo !== null && minutosAguardando > alvo,
+                });
+            }
+
+            const ordenada = ordenarFilaPorGravidade(fila);
+
+            if (!paginacao) {
+                return {data: ordenada, error: null};
+            }
+
+            return {
+                data: montarRespostaPaginada(
+                    ordenada.slice(paginacao.de, paginacao.de + paginacao.limite),
+                    ordenada.length,
+                    paginacao.pagina,
+                    paginacao.limite
+                ),
+                error: null,
+            };
+        } catch (error) {
+            return {data: null, error: error instanceof Error ? error : new Error('Erro desconhecido')};
+        }
+    }
+
+    /** Escore MEWS de uma triagem já gravada (recalculado sobre os sinais salvos). */
+    async getMewsDaTriagem(id: string): Promise<{ data: any | null, error: Error | null }> {
+        try {
+            const {data, error} = await supabaseAdmin
+                .from('triagem')
+                .select('id, paciente_id, sinais_vitais, mews_score, nivel_gravidade, created_at')
+                .eq('id', id)
+                .eq('ativo', true)
+                .maybeSingle();
+
+            if (error) throw new Error(`Erro ao buscar triagem: ${error.message}`);
+            if (!data) throw new Error('Triagem não encontrada');
+
+            const {data: calculo} = MewsService.calcular(data.sinais_vitais as SinaisVitais);
+
+            return {
+                data: {
+                    triagemId: data.id,
+                    pacienteId: data.paciente_id,
+                    classificacaoRisco: data.nivel_gravidade,
+                    // valor gravado no banco; se a triagem for antiga, usa o recálculo
+                    mewsScore: data.mews_score ?? calculo?.escore ?? null,
+                    mewsRecalculado: calculo?.escore ?? null,
+                    faixa: calculo?.faixa ?? null,
+                    recomendacao: calculo?.recomendacao ?? null,
+                    componentes: calculo?.componentes ?? null,
+                    escalaAvpu: calculo?.escalaAvpu ?? null,
+                },
+                error: null,
+            };
         } catch (error) {
             return {data: null, error: error instanceof Error ? error : new Error('Erro desconhecido')};
         }
@@ -182,6 +414,16 @@ export class TriagemService {
                 queixa_principal: data.queixa_principal,
                 paciente_nome: data.paciente?.nome || 'Paciente não encontrado',
                 enfermeiro_nome: data.enfermeiro?.nome || 'Enfermeiro não encontrado',
+                // Campos novos (o frontend do painel usa camelCase)
+                dataTriagem: data.data_triagem ?? data.created_at,
+                nivelGravidade: data.nivel_gravidade,
+                classificacaoRisco: data.nivel_gravidade,
+                mewsScore: data.mews_score ?? null,
+                sinaisVitais: data.sinais_vitais,
+                queixaPrincipal: data.queixa_principal,
+                escalaAvpu: data.sinais_vitais?.escalaAvpu ?? null,
+                pacienteNome: data.paciente?.nome || 'Paciente não encontrado',
+                enfermeiroNome: data.enfermeiro?.nome || 'Enfermeiro não encontrado',
             };
 
             return { data: triagem as any, error: null };
